@@ -2,6 +2,7 @@ use hyper::{Body, Request, Response};
 use std::convert::Infallible;
 use hyper::service::{make_service_fn, service_fn};
 use std::io::Read;
+use futures::Sink;
 
 async fn handle(mut req: Request<Body>) -> Result<Response<Body>, std::convert::Infallible> {
 	println!("Handling function; path is {}", req.uri());
@@ -26,7 +27,8 @@ async fn handle(mut req: Request<Body>) -> Result<Response<Body>, std::convert::
 		tokio::spawn(async move {
 			match hyper::upgrade::on(&mut req).await {
 				Ok(upgraded) => {
-					let strem = tokio_tungstenite::WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Server, None);
+					let mut wsock = tokio_tungstenite::WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Server, None).await;
+					tokio::macros::support::Pin::new(&mut wsock).start_send(tungstenite::Message::Text("bonjour".to_string())).unwrap();
 					println!("upgrade succeeded");
 				},
 				Err(e) => eprintln!("upgrade error: {}", e)
