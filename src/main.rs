@@ -42,23 +42,16 @@ async fn handle(mut req: Request<Body>, apioforms: Arc<Mutex<Vec<Apioform>>>, tx
 					let mut wsock = tokio_tungstenite::WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Server, None).await;
 					tokio::macros::support::Pin::new(&mut wsock).start_send(tungstenite::Message::Text("bonjour".to_string())).unwrap();
 					let (sink, mut strem) = wsock.split();
-//					let strs = Arc::new(Mutex::new(Vec::new()));
 					{
 						let apio = Apioform { sink: sink, id: api };
 						let mut apioforms = apioforms.lock().unwrap();
 						apioforms.push(apio);
 					}
 					while let Some(Ok(tungstenite::Message::Text(message))) = strem.next().await {
-//						{
-//							let mut strs = strs.lock().unwrap();
-//							strs.push(message);
-//						}
 						println!("received message {}", message);
 						tx.send((api, message)).await.unwrap();
 						println!("tx finished");
 					}
-					// let mut wsock = tungstenite::WebSocket::from_raw_socket(upgraded, tungstenite::protocol::Role::Server, None);
-					// wsock.write_message(tungstenite::Message::Text("bonjour".to_string())).unwrap();
 					println!("upgrade succeeded");
 				},
 				Err(e) => eprintln!("upgrade error: {}", e)
@@ -101,31 +94,47 @@ async fn main() {
 		async move { Ok::<_, Infallible>(service) }
 	});
 	tokio::spawn(async move {
+		let mut points: Vec<(usize, String, String)> = Vec::new();
+		let mut pi: usize = 0;
 		while let Some((api, message)) = rx.recv().await {
-			let mut i: usize = 0;
+			let mut tokens: Vec<&str> = message.split(' ').collect();
+			// placePoint/2
+			// placePointOnLine/4
+			// connectPoint/2
 			loop {
-				println!("apio started");
-				let mut apio = {
-					let mut apios = apios.lock().unwrap();
-					if i >= apios.len() {
-						break;
-					}
-					apios.remove(i)
-				};
-				let message = format!("{} {} {}", api, apio.id, message);
-				if api == apio.id {
-					apio.sink.send(tungstenite::Message::Text("s ".to_string() + &message)).await.unwrap();
+				if tokens.len() == 0 { break; }
+				let cmd = tokens.remove(0);
+				let (selfmsg, awaymsg) = if cmd == "placePoint" {
+					let x = tokens.remove(0);
+					let y = tokens.remove(0);
+					points.push((pi, x.to_string(), y.to_string())); pi += 1;
+					(format!("pointIndex {} {} {}", pi - 1, x, y), format!("placePoint {} {} {}", pi - 1, x, y))
 				} else {
-					apio.sink.send(tungstenite::Message::Text("h ".to_string() + &message)).await.unwrap();
+					(String::new(), String::new())
+				};
+				let mut i: usize = 0;
+				loop {
+					println!("apio started");
+					let mut apio = {
+						let mut apios = apios.lock().unwrap();
+						if i >= apios.len() {
+							break;
+						}
+						apios.remove(i)
+					};
+					if api == apio.id {
+						apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
+					} else {
+						apio.sink.send(tungstenite::Message::Text(awaymsg.to_string())).await.unwrap();
+					}
+					{
+						let mut apios = apios.lock().unwrap();
+						apios.insert(i, apio);
+					}
+					println!("apio finished");
+					i += 1;
 				}
-				{
-					let mut apios = apios.lock().unwrap();
-					apios.insert(i, apio);
-				}
-				println!("apio finished");
-				i += 1;
 			}
-			println!("resp finished");
 		}
 	});
 	let server = hyper::Server::bind(&addr).serve(make_service);
