@@ -175,7 +175,7 @@ fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: 
 	tokens.push(v[2].to_string());
 }
 
-fn ppp_to_quad(wd: &mut WorldData, _tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
+fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
 	let mut l = None;
 	let mut t = None;
 	'lop:
@@ -196,8 +196,8 @@ fn ppp_to_quad(wd: &mut WorldData, _tokens: &mut Vec<String>, pia: usize, pib: u
 			points.sort();
 			wd.tris.remove(&tri);
 			wd.lines.remove(&line);
-			wd.lines.insert([pia, pin], 1);
-			wd.lines.insert([pib, pin], 1);
+			points_to_line(wd, tokens, pia, pin);
+			points_to_line(wd, tokens, pib, pin);
 			wd.quads.insert([points[0], points[1], points[2], points[3]]);
 		}
 	}
