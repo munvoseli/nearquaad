@@ -93,6 +93,43 @@ impl WorldData {
 			pi: 0
 		}
 	}
+	// todo: polynomial symmetry for indexing
+	// my first thought with this was to store
+	//   a+b and a*b for lines, [a+b+c, ab+bc+ac, abc] for tris,
+	//   and so on
+	// there's a way to invert it, because roots, so it'll be a bijection
+	// (since unorder)
+	// but that's just one way to look at it
+	// since another way is doing abc, (a+1)(b+1)(c+1), (a+2)(b+2)(c+2)...
+	// but idk if that's invertible
+	// i think it is, due to Linear Algebra Stuff
+	// but that's like n^2 multiplications overall still
+	// need to beat sort(), which is n log n
+	pub fn dump(&self) -> Vec<String> {
+		let mut tokens = Vec::new();
+		tokens.push("setPoints".to_string());
+		tokens.push(self.points.len().to_string());
+		for (pi, xy) in &self.points {
+			tokens.push(pi.to_string());
+			tokens.push(xy.0.to_string());
+			tokens.push(xy.1.to_string());
+		}
+		tokens.push("setLines".to_string());
+		tokens.push(self.lines.len().to_string());
+		for (pii, lc) in &self.lines {
+			tokens.push(pii[0].to_string());
+			tokens.push(pii[1].to_string());
+			tokens.push(lc.to_string());
+		}
+		tokens.push("setTris".to_string());
+		tokens.push(self.tris.len().to_string());
+		for tri in &self.tris {
+			tokens.push(tri[0].to_string());
+			tokens.push(tri[1].to_string());
+			tokens.push(tri[2].to_string());
+		}
+		tokens
+	}
 }
 
 fn place_point(wd: &mut WorldData, tokens: &mut Vec<String>, x: &str, y: &str) {
@@ -126,30 +163,6 @@ fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: 
 	tokens.push(v[0].to_string());
 	tokens.push(v[1].to_string());
 	tokens.push(v[2].to_string());
-}
-
-fn dump_wd(wd: &mut WorldData, tokens: &mut Vec<String>) {
-	tokens.push("setPoints".to_string());
-	tokens.push(wd.points.len().to_string());
-	for (pi, xy) in &wd.points {
-		tokens.push(pi.to_string());
-		tokens.push(xy.0.to_string());
-		tokens.push(xy.1.to_string());
-	}
-	tokens.push("setLines".to_string());
-	tokens.push(wd.lines.len().to_string());
-	for (pii, lc) in &wd.lines {
-		tokens.push(pii[0].to_string());
-		tokens.push(pii[1].to_string());
-		tokens.push(lc.to_string());
-	}
-	tokens.push("setTris".to_string());
-	tokens.push(wd.tris.len().to_string());
-	for tri in &wd.tris {
-		tokens.push(tri[0].to_string());
-		tokens.push(tri[1].to_string());
-		tokens.push(tri[2].to_string());
-	}
 }
 
 #[tokio::main]
@@ -220,8 +233,7 @@ async fn main() {
 				},
 				_ => {}
 				};
-				outok = Vec::new();
-				dump_wd(&mut wd, &mut outok);
+				outok = wd.dump();
 				let msg = outok.join(" ");
 				let mut i: usize = 0;
 				loop {
