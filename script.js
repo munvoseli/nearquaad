@@ -11,6 +11,7 @@ let points = {};
 let pendingPoints = [];
 let lines = [];
 let tris = [];
+let quads = [];
 
 function xyToPoint(x, y) {
 	let keys = [];
@@ -41,31 +42,53 @@ addEventListener("keydown", function(e) {
 	if (e.key == "t") {
 		if (lastClicked.length < 3) return;
 		ws.send(["makeTri", lastClicked[0], lastClicked[1], lastClicked[2]].join(" "));
+	} else if (e.key == "q") {
+		if (lastClicked.length < 3) return;
+		ws.send(["makeQuad", lastClicked[0], lastClicked[1], lastClicked[2]].join(" "));
 	}
 	console.log(e);
 }, false);
 
 function draw() {
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
-	ctx.beginPath();
-	ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+	// tris
 	for (let tri of tris) {
+		ctx.beginPath();
+		ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
 		ctx.moveTo(points[tri[0]].x * canvas.width, points[tri[0]].y * canvas.height);
 		ctx.lineTo(points[tri[1]].x * canvas.width, points[tri[1]].y * canvas.height);
 		ctx.lineTo(points[tri[2]].x * canvas.width, points[tri[2]].y * canvas.height);
+		ctx.fill();
+		ctx.closePath();
 	}
-	ctx.fill();
-	ctx.closePath();
-	ctx.beginPath();
-	ctx.fillStyle = "#000";
+	// quads
+	for (let quad of quads) {
+		for (let i = 0; i < 4; ++i) {
+			ctx.beginPath();
+			ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+			let j = i;
+			ctx.moveTo(points[quad[j]].x * canvas.width, points[quad[j]].y * canvas.height);
+			j++; j %= 4;
+			ctx.lineTo(points[quad[j]].x * canvas.width, points[quad[j]].y * canvas.height);
+			j++; j %= 4;
+			ctx.lineTo(points[quad[j]].x * canvas.width, points[quad[j]].y * canvas.height);
+			ctx.fill();
+			ctx.closePath();
+		}
+	}
+	// points
 	for (let pi in points) {
+		ctx.beginPath();
+		ctx.fillStyle = "#000";
 		let point = points[pi];
 		ctx.fillRect(point.x * canvas.width - 5, point.y * canvas.height - 5, 10, 10);
+		ctx.closePath();
 	}
 	for (let line of lines) {
 		ctx.closePath();
 		ctx.beginPath();
-		ctx.lineWidth = line[2] == 1 ? 5 : 2;
+		ctx.fillStyle = line[2] == 1 || line[2] == 2 ? "#000" : "#f00";
+		ctx.lineWidth = line[2] == 2 ? 2 : 5;
 		ctx.moveTo(points[line[0]].x * canvas.width, points[line[0]].y * canvas.height);
 		ctx.lineTo(points[line[1]].x * canvas.width, points[line[1]].y * canvas.height);
 		ctx.stroke();
@@ -135,6 +158,18 @@ ws.onmessage = function(e) {
 				let pib = parseInt(terms[i++]);
 				let pic = parseInt(terms[i++]);
 				tris.push([pia, pib, pic]);
+			}
+		} break;
+		case "setQuads": {
+			let len = parseInt(terms[i++]);
+			quads = [];
+			for (let j = 0; j < len; ++j) {
+				quads.push([
+					parseInt(terms[i++]),
+					parseInt(terms[i++]),
+					parseInt(terms[i++]),
+					parseInt(terms[i++]),
+				]);
 			}
 		} break;
 		case "placePoint": {

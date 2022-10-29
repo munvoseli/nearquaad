@@ -47,6 +47,7 @@ async fn handle(mut req: Request<Body>, apioforms: Arc<Mutex<Vec<Apioform>>>, tx
 						let mut apioforms = apioforms.lock().unwrap();
 						apioforms.push(apio);
 					}
+					tx.send((api, Some("".to_string()))).await.unwrap();
 					while let Some(Ok(tungstenite::Message::Text(message))) = strem.next().await {
 						println!("received message {}", message);
 						tx.send((api, Some(message))).await.unwrap();
@@ -128,6 +129,14 @@ impl WorldData {
 			tokens.push(tri[1].to_string());
 			tokens.push(tri[2].to_string());
 		}
+		tokens.push("setQuads".to_string());
+		tokens.push(self.quads.len().to_string());
+		for quad in &self.quads {
+			tokens.push(quad[0].to_string());
+			tokens.push(quad[1].to_string());
+			tokens.push(quad[2].to_string());
+			tokens.push(quad[3].to_string());
+		}
 		tokens
 	}
 }
@@ -163,6 +172,34 @@ fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: 
 	tokens.push(v[0].to_string());
 	tokens.push(v[1].to_string());
 	tokens.push(v[2].to_string());
+}
+
+fn ppp_to_quad(wd: &mut WorldData, _tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
+	let mut l = None;
+	let mut t = None;
+	'lop:
+	for line in &wd.lines {
+		if line.0.contains(&pia) && line.0.contains(&pib) {
+			for tri in &wd.tris {
+				if tri.contains(&pia) && tri.contains(&pib) {
+					t = Some(tri.clone());
+					l = Some(line.0.clone());
+					break 'lop;
+				}
+			}
+		}
+	}
+	if let Some(tri) = t {
+		if let Some(line) = l {
+			let mut points = vec![tri[0], tri[1], tri[2], pin];
+			points.sort();
+			wd.tris.remove(&tri);
+			wd.lines.remove(&line);
+			wd.lines.insert([pia, pin], 1);
+			wd.lines.insert([pib, pin], 1);
+			wd.quads.insert([points[0], points[1], points[2], points[3]]);
+		}
+	}
 }
 
 #[tokio::main]
@@ -230,6 +267,12 @@ async fn main() {
 					let pib = tokens.remove(0).parse::<usize>().unwrap();
 					let pic = tokens.remove(0).parse::<usize>().unwrap();
 					points_to_tri(&mut wd, &mut outok, pia, pib, pic);
+				},
+				"makeQuad" => {
+					let pia = tokens.remove(0).parse::<usize>().unwrap();
+					let pib = tokens.remove(0).parse::<usize>().unwrap();
+					let pin = tokens.remove(0).parse::<usize>().unwrap();
+					ppp_to_quad(&mut wd, &mut outok, pia, pib, pin);
 				},
 				_ => {}
 				};
