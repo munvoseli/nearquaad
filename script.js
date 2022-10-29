@@ -41,10 +41,10 @@ canvas.addEventListener("mousemove", function(e) {
 addEventListener("keydown", function(e) {
 	if (e.key == "t") {
 		if (lastClicked.length < 3) return;
-		ws.send(["makeTri", lastClicked[0], lastClicked[1], lastClicked[2]].join(" "));
+		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeTri"].join(" "));
 	} else if (e.key == "q") {
 		if (lastClicked.length < 3) return;
-		ws.send(["makeQuad", lastClicked[0], lastClicked[1], lastClicked[2]].join(" "));
+		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeQuad"].join(" "));
 	}
 	console.log(e);
 }, false);
@@ -104,7 +104,7 @@ canvas.addEventListener("mousedown", function(e) {
 		pendingPoints.push({x: x, y: y});
 		draw();
 		if (ws.OPEN) {
-			ws.send(["placePoint", x, y].join(" "));
+			ws.send([x, y, "placePoint"].join(" "));
 		}
 	} else {
 		console.log(lastClicked);

@@ -141,13 +141,14 @@ impl WorldData {
 	}
 }
 
-fn place_point(wd: &mut WorldData, tokens: &mut Vec<String>, x: &str, y: &str) {
+fn place_point(wd: &mut WorldData, tokens: &mut Vec<String>, x: &str, y: &str) -> usize {
 	wd.points.insert(wd.pi, (x.to_string(), y.to_string()));
 	tokens.push("placePoint".to_string());
 	tokens.push(wd.pi.to_string());
 	wd.pi += 1;
 	tokens.push(x.to_string());
 	tokens.push(y.to_string());
+	return wd.pi - 1;
 }
 
 fn points_to_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize) {
@@ -202,6 +203,74 @@ fn ppp_to_quad(wd: &mut WorldData, _tokens: &mut Vec<String>, pia: usize, pib: u
 	}
 }
 
+enum StackBoi {
+	Raw(String),
+	PointId(usize)
+}
+
+fn get_point_id(a: StackBoi) -> usize {
+	if let StackBoi::PointId(a) = a {
+		return a;
+	} else if let StackBoi::Raw(s) = a {
+		return s.parse::<usize>().unwrap();
+	}
+	0
+}
+fn get_top_float_str(s: &mut Vec<StackBoi>) -> String {
+	if let StackBoi::Raw(x) = s.pop().unwrap() { x.to_string() }
+	else { todo!() }
+}
+
+// 1.0 1.0 placePoint
+// 0 1 1.0 1.0 placePoint makeQuad
+fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) {
+	let mut stack: Vec<StackBoi> = Vec::new();
+	let mut outok = Vec::new();
+	for token in tokens {
+		match token {
+		&"placePoint" => {
+			let y = get_top_float_str(&mut stack);
+			let x = get_top_float_str(&mut stack);
+			let pi = place_point(wd, &mut outok, &x, &y);
+			stack.push(StackBoi::PointId(pi));
+		},
+		&"makeTri" => {
+			let pic = get_point_id(stack.pop().unwrap());
+			let pib = get_point_id(stack.pop().unwrap());
+			let pia = get_point_id(stack.pop().unwrap());
+			points_to_tri(wd, &mut outok, pia, pib, pic);
+		},
+		&"makeQuad" => {
+			let pin = get_point_id(stack.pop().unwrap());
+			let pib = get_point_id(stack.pop().unwrap());
+			let pia = get_point_id(stack.pop().unwrap());
+			ppp_to_quad(wd, &mut outok, pia, pib, pin);
+		},
+		raw => {
+			stack.push(StackBoi::Raw(raw.to_string()));
+		}
+		}
+	}
+}
+
+//				match cmd {
+//				"placePoint" => {
+//					let x = tokens.remove(0);
+//					let y = tokens.remove(0);
+//					place_point(&mut wd, &mut outok, x, y);
+//				},
+//				"makeTri" => {
+//					let pia = tokens.remove(0).parse::<usize>().unwrap();
+//					let pib = tokens.remove(0).parse::<usize>().unwrap();
+//					let pic = tokens.remove(0).parse::<usize>().unwrap();
+//					points_to_tri(&mut wd, &mut outok, pia, pib, pic);
+//				},
+//				"makeQuad" => {
+//					let pia = tokens.remove(0).parse::<usize>().unwrap();
+//					let pib = tokens.remove(0).parse::<usize>().unwrap();
+//					let pin = tokens.remove(0).parse::<usize>().unwrap();
+//					ppp_to_quad(&mut wd, &mut outok, pia, pib, pin);
+//				},
 #[tokio::main]
 async fn main() {
 	let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
@@ -243,62 +312,30 @@ async fn main() {
 				continue;
 			}
 			let message = message.unwrap();
-			let mut tokens: Vec<&str> = message.split(' ').collect();
-			// client to server:
-			// placePoint () x, y
-			// connectPoints () pi, pi
-			// disconnPoints () pi, pi
-			// lineToTri () pi, pi, x, y
-			// triToQuad () pi, pi, pif, x, y
-			// makeTriXY () pi, pi, x, y
-			// makeTri () pi, pi, pi
+			let tokens: Vec<&str> = message.split(' ').collect();
+			run_program(&mut wd, &tokens);
+			let outok = wd.dump();
+			let msg = outok.join(" ");
+			let mut i: usize = 0;
 			loop {
-				if tokens.len() == 0 { break; }
-				let cmd = tokens.remove(0);
-				let mut outok: Vec<String> = Vec::new();
-				match cmd {
-				"placePoint" => {
-					let x = tokens.remove(0);
-					let y = tokens.remove(0);
-					place_point(&mut wd, &mut outok, x, y);
-				},
-				"makeTri" => {
-					let pia = tokens.remove(0).parse::<usize>().unwrap();
-					let pib = tokens.remove(0).parse::<usize>().unwrap();
-					let pic = tokens.remove(0).parse::<usize>().unwrap();
-					points_to_tri(&mut wd, &mut outok, pia, pib, pic);
-				},
-				"makeQuad" => {
-					let pia = tokens.remove(0).parse::<usize>().unwrap();
-					let pib = tokens.remove(0).parse::<usize>().unwrap();
-					let pin = tokens.remove(0).parse::<usize>().unwrap();
-					ppp_to_quad(&mut wd, &mut outok, pia, pib, pin);
-				},
-				_ => {}
-				};
-				outok = wd.dump();
-				let msg = outok.join(" ");
-				let mut i: usize = 0;
-				loop {
-					let mut apio = {
-						let mut apios = apios.lock().unwrap();
-						if i >= apios.len() {
-							break;
-						}
-						apios.remove(i)
-					};
-					apio.sink.send(tungstenite::Message::Text(msg.to_string())).await.unwrap();
-					//if api == apio.id {
-					//	apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
-					//} else {
-					//	apio.sink.send(tungstenite::Message::Text(awaymsg.to_string())).await.unwrap();
-					//}
-					{
-						let mut apios = apios.lock().unwrap();
-						apios.insert(i, apio);
+				let mut apio = {
+					let mut apios = apios.lock().unwrap();
+					if i >= apios.len() {
+						break;
 					}
-					i += 1;
+					apios.remove(i)
+				};
+				apio.sink.send(tungstenite::Message::Text(msg.to_string())).await.unwrap();
+				//if api == apio.id {
+				//	apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
+				//} else {
+				//	apio.sink.send(tungstenite::Message::Text(awaymsg.to_string())).await.unwrap();
+				//}
+				{
+					let mut apios = apios.lock().unwrap();
+					apios.insert(i, apio);
 				}
+				i += 1;
 			}
 		}
 	});
