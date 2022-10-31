@@ -10,6 +10,44 @@ use std::sync::Mutex;
 use hyper::upgrade::Upgraded;
 use std::collections::{HashMap, HashSet};
 
+fn parse_point(s: &str) -> (f32, f32) {
+	let ci = s.find(',').unwrap();
+	let x = s[0..ci].parse::<f32>().unwrap();
+	let y = s[ci + 1..].parse::<f32>().unwrap();
+	(x, y)
+}
+
+fn svg_to_segments(fname: &str) -> Vec<((f32, f32), (f32, f32))> {
+	let mut file = std::fs::File::open(fname).unwrap();
+	let mut tokens = Vec::new();
+	file.read_to_end(&mut tokens).unwrap();
+	let tokens = String::from_utf8(tokens).unwrap();
+	let tokens = tokens.trim();
+	let tokens: Vec<&str> = tokens.split(" ").collect();
+	let mut segments = Vec::new();
+	let mut last_point = tokens[1];
+	let mut i = 0;
+	while i < tokens.len() {
+		if tokens[i] == "M" {
+			last_point = tokens[i + 1];
+			i += 2;
+		} else if tokens[i] == "L" {
+			segments.push((parse_point(last_point), parse_point(tokens[i + 1])));
+			last_point = tokens[i + 1];
+			i += 2;
+		} else if tokens[i] == "Z" {
+			i += 1;
+		} else if tokens[i] == "A" {
+			i += 5;
+		} else {
+			println!("{:?}", &tokens[i - 4..i]);
+			println!("Unknown token type {}", tokens[i]);
+			break;
+		}
+	}
+	segments
+}
+
 struct Apioform {
 	sink: futures_util::stream::SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>,
 	id: usize
@@ -82,6 +120,15 @@ struct WorldData {
 	lines: HashMap<[usize; 2], u8>,
 	tris: HashSet<[usize; 3]>,
 	quads: HashSet<[usize; 4]>,
+	vsegments: Vec<((f32, f32), (f32, f32))>
+}
+
+enum FloorTypes {
+	Elevator(String),
+	Room(String),
+	Stairs(String),
+	Ramp(String),
+	Floor,
 }
 
 impl WorldData {
@@ -91,7 +138,8 @@ impl WorldData {
 			lines: HashMap::new(),
 			tris: HashSet::new(),
 			quads: HashSet::new(),
-			pi: 0
+			pi: 0,
+			vsegments: svg_to_segments("al.txt")
 		}
 	}
 	// todo: polynomial symmetry for indexing
@@ -200,7 +248,6 @@ fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: us
 		wd.quads.insert([points[0], points[1], points[2], points[3]]);
 		true
 	} else {
-		println!("{} {} {}", pia, pib, pin);
 		false
 	}
 }
@@ -229,11 +276,17 @@ fn get_top_float_str(s: &mut Vec<StackBoi>) -> String {
 	else { todo!() }
 }
 
+fn point_in_box(p: (f32, f32), x0: f32, y0: f32, x2: f32, y2: f32) -> bool {
+	x0 < p.0 && p.0 < x2 &&
+	y0 < p.1 && p.1 < y2
+}
+
 // 1.0 1.0 placePoint
 // 0 1 1.0 1.0 placePoint makeQuad
-fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) {
+fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) -> Vec<String> {
 	let mut stack: Vec<StackBoi> = Vec::new();
 	let mut outok = Vec::new();
+	let mut resp = Vec::new();
 	for token in tokens {
 		match token {
 		&"placePoint" => {
@@ -260,31 +313,36 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) {
 			let pia = get_point_id(stack.pop().unwrap());
 			make_tri_or_quad(wd, &mut outok, pia, pib, pin);
 		},
+		&"getSvgWindow" => {
+			let y2 = get_top_float_str(&mut stack).parse::<f32>().unwrap();
+			let x2 = get_top_float_str(&mut stack).parse::<f32>().unwrap();
+			let y0 = get_top_float_str(&mut stack).parse::<f32>().unwrap();
+			let x0 = get_top_float_str(&mut stack).parse::<f32>().unwrap();
+			let mut indices = Vec::new();
+			{
+				let mut i = 0;
+				while i < wd.vsegments.len() {
+					let s = &wd.vsegments[i];
+					if point_in_box(s.0, x0, y0, x2, y2) || point_in_box(s.1, x0, y0, x2, y2) {
+						indices.push(i);
+					}
+					i += 1;
+				}
+			}
+			resp.push(format!("setSVG {}", indices.len()));
+			for i in indices {
+				let s = &wd.vsegments[i];
+				resp.push(format!("{} {} {} {}", s.0.0, s.0.1, s.1.0, s.1.1));
+			}
+		},
 		raw => {
 			stack.push(StackBoi::Raw(raw.to_string()));
 		}
 		}
 	}
+	resp
 }
 
-//				match cmd {
-//				"placePoint" => {
-//					let x = tokens.remove(0);
-//					let y = tokens.remove(0);
-//					place_point(&mut wd, &mut outok, x, y);
-//				},
-//				"makeTri" => {
-//					let pia = tokens.remove(0).parse::<usize>().unwrap();
-//					let pib = tokens.remove(0).parse::<usize>().unwrap();
-//					let pic = tokens.remove(0).parse::<usize>().unwrap();
-//					points_to_tri(&mut wd, &mut outok, pia, pib, pic);
-//				},
-//				"makeQuad" => {
-//					let pia = tokens.remove(0).parse::<usize>().unwrap();
-//					let pib = tokens.remove(0).parse::<usize>().unwrap();
-//					let pin = tokens.remove(0).parse::<usize>().unwrap();
-//					ppp_to_quad(&mut wd, &mut outok, pia, pib, pin);
-//				},
 #[tokio::main]
 async fn main() {
 	let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
@@ -327,9 +385,8 @@ async fn main() {
 			}
 			let message = message.unwrap();
 			let tokens: Vec<&str> = message.split(' ').collect();
-			run_program(&mut wd, &tokens);
-			let outok = wd.dump();
-			let msg = outok.join(" ");
+			let selfmsg = run_program(&mut wd, &tokens).join(" ");
+			let msg = wd.dump().join(" ");
 			let mut i: usize = 0;
 			loop {
 				let mut apio = {
@@ -340,8 +397,11 @@ async fn main() {
 					apios.remove(i)
 				};
 				apio.sink.send(tungstenite::Message::Text(msg.to_string())).await.unwrap();
-				//if api == apio.id {
-				//	apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
+				println!("{} {}, {}", api, apio.id, api == apio.id);
+				if api == apio.id {
+					println!("{}", selfmsg.len());
+					apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
+				}
 				//} else {
 				//	apio.sink.send(tungstenite::Message::Text(awaymsg.to_string())).await.unwrap();
 				//}
