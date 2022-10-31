@@ -13,6 +13,66 @@ let lines = [];
 let tris = [];
 let quads = [];
 
+function distToLine(pia, pib, x, y) {
+	let {x: xa, y: ya} = points[pia];
+	let {x: xb, y: yb} = points[pib];
+	x -= xa;
+	y -= ya;
+	let xe = xb - xa;
+	let ye = yb - ya;
+	let det = xe * xe + ye * ye;
+	let xo = xe * x + ye * y;
+	let yo = -ye * x + xe * y;
+	xo /= det;
+	yo /= det;
+	xo -= 0.5;
+	xo = Math.abs(xo);
+	xo = xo < 0.5 ? 0 : xo - 0.5;
+	xo *= Math.sqrt(det);
+	yo *= Math.sqrt(det);
+	return Math.sqrt(xo * xo + yo * yo);
+}
+
+function getNearestLine(x, y) {
+	let li;
+	let lv;
+	for (let i in lines) {
+		let v = distToLine(lines[i][0], lines[i][1], x, y);
+		if (v > lv) continue;
+		lv = v;
+		li = i;
+	}
+	return [li, lv];
+}
+
+function getNearestPoint(x, y) {
+	let pk;
+	let v;
+	for (let k in points) {
+		let p = points[k];
+		let d = (p.x - x) ** 2 + (p.y - y) ** 2;
+		if (d > v) continue;
+		v = d;
+		pk = k;
+	}
+	return [pk, Math.sqrt(v)];
+}
+
+function getNearestThing(x, y) {
+	let np = getNearestPoint(x, y);
+	let lp = getNearestLine(x, y);
+	let res;
+	console.log(np[1], lp[1]);
+	if (np[1] < 0.03) {
+		res = ["point", np[0]];
+	} else if (lp[1] < 0.01) {
+		res = ["line", lp[0]];
+	} else {
+		res = ["none"];
+	}
+	return res;
+}
+
 function xyToPoint(x, y) {
 	let keys = [];
 	for (let k in points) {
@@ -45,8 +105,11 @@ addEventListener("keydown", function(e) {
 	} else if (e.key == "q") {
 		if (lastClicked.length < 3) return;
 		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeQuad"].join(" "));
+	} else if (e.key == "a") {
+		if (ws.OPEN) {
+			ws.send([curx, cury, "placePoint"].join(" "));
+		}
 	}
-	console.log(e);
 }, false);
 
 function draw() {
@@ -96,25 +159,38 @@ function draw() {
 	}
 }
 
+let startStroke = [];
 canvas.addEventListener("mousedown", function(e) {
 	let r = this.getBoundingClientRect();
 	let x = (e.clientX - r.x) / r.width;
 	let y = (e.clientY - r.y) / r.height;
+	startStroke = [e.button, getNearestThing(x, y)];
 	if (e.button == 0) {
-		pendingPoints.push({x: x, y: y});
 		draw();
-		if (ws.OPEN) {
-			ws.send([x, y, "placePoint"].join(" "));
-		}
 	} else {
+		console.log(getNearestThing(x, y));
 		console.log(lastClicked);
 		lastClicked.unshift(xyToPoint(x, y));
 		if (lastClicked.length > 3) lastClicked.pop();
 	}
-	console.log(e);
 	e.cancelBubble = true;
 	e.preventDefault();
 	return false;
+}, false);
+canvas.addEventListener("mouseup", function(e) {
+	let r = this.getBoundingClientRect();
+	let x = (e.clientX - r.x) / r.width;
+	let y = (e.clientY - r.y) / r.height;
+	if (startStroke[1][0] == "line") {
+		let l = lines[startStroke[1][1]];
+		let n = getNearestThing(x, y);
+		if (n[0] == "point") {
+			ws.send([l[0], l[1], n[1], "makeTriOrQuad"].join(" "));
+		} else {
+			ws.send([l[0], l[1], x, y, "placePoint", "makeTriOrQuad"].join(" "));
+		}
+		console.log(n);
+	}
 }, false);
 canvas.addEventListener("contextmenu", function(e) {
 	e.preventDefault();

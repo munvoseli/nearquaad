@@ -175,7 +175,7 @@ fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: 
 	tokens.push(v[2].to_string());
 }
 
-fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
+fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) -> bool {
 	let mut l = None;
 	let mut t = None;
 	'lop:
@@ -190,16 +190,24 @@ fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: us
 			}
 		}
 	}
-	if let Some(tri) = t {
-		if let Some(line) = l {
-			let mut points = vec![tri[0], tri[1], tri[2], pin];
-			points.sort();
-			wd.tris.remove(&tri);
-			wd.lines.remove(&line);
-			points_to_line(wd, tokens, pia, pin);
-			points_to_line(wd, tokens, pib, pin);
-			wd.quads.insert([points[0], points[1], points[2], points[3]]);
-		}
+	if let (Some(tri), Some(line)) = (t, l) {
+		let mut points = vec![tri[0], tri[1], tri[2], pin];
+		points.sort();
+		wd.tris.remove(&tri);
+		wd.lines.remove(&line);
+		points_to_line(wd, tokens, pia, pin);
+		points_to_line(wd, tokens, pib, pin);
+		wd.quads.insert([points[0], points[1], points[2], points[3]]);
+		true
+	} else {
+		println!("{} {} {}", pia, pib, pin);
+		false
+	}
+}
+
+fn make_tri_or_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
+	if !ppp_to_quad(wd, tokens, pia, pib, pin) {
+		points_to_tri(wd, tokens, pia, pib, pin);
 	}
 }
 
@@ -245,6 +253,12 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) {
 			let pib = get_point_id(stack.pop().unwrap());
 			let pia = get_point_id(stack.pop().unwrap());
 			ppp_to_quad(wd, &mut outok, pia, pib, pin);
+		},
+		&"makeTriOrQuad" => {
+			let pin = get_point_id(stack.pop().unwrap());
+			let pib = get_point_id(stack.pop().unwrap());
+			let pia = get_point_id(stack.pop().unwrap());
+			make_tri_or_quad(wd, &mut outok, pia, pib, pin);
 		},
 		raw => {
 			stack.push(StackBoi::Raw(raw.to_string()));
