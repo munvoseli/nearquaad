@@ -295,6 +295,13 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) -> Vec<String> {
 			let pi = place_point(wd, &mut outok, &x, &y);
 			stack.push(StackBoi::PointId(pi));
 		},
+		&"movePoint" => {
+			let y = get_top_float_str(&mut stack);
+			let x = get_top_float_str(&mut stack);
+			let pi = stack.pop().unwrap();
+			let pi = get_point_id(pi);
+			wd.points.insert(pi, (x, y));
+		},
 		&"makeTri" => {
 			let pic = get_point_id(stack.pop().unwrap());
 			let pib = get_point_id(stack.pop().unwrap());

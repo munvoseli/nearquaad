@@ -66,9 +66,9 @@ function getNearestThing(x, y) {
 	let lp = getNearestLine(x, y);
 	let res;
 	console.log(np[1], lp[1]);
-	if (np[1] < 0.03) {
+	if (np[1] < 0.03 * camera.scale) {
 		res = ["point", np[0]];
-	} else if (lp[1] < 0.01) {
+	} else if (lp[1] < 0.01 * camera.scale) {
 		res = ["line", lp[0]];
 	} else {
 		res = ["none"];
@@ -108,6 +108,11 @@ addEventListener("keydown", function(e) {
 			ws.send([curx, cury, "placePoint"].join(" "));
 		}
 	}
+	else if (e.key == "ArrowUp"  ) setCamera(camera.x, camera.y - camera.scale / 3, camera.scale);
+	else if (e.key == "ArrowDown") setCamera(camera.x, camera.y + camera.scale / 3, camera.scale);
+	else if (e.key == "ArrowLeft" ) setCamera(camera.x - camera.scale / 3, camera.y, camera.scale);
+	else if (e.key == "ArrowRight") setCamera(camera.x + camera.scale / 3, camera.y, camera.scale);
+	console.log(e.key);
 }, false);
 
 function draw() {
@@ -140,7 +145,7 @@ function draw() {
 		}
 	}
 	// points
-	let bs = 0.01 / camera.scale;
+	let bs = 100 / camera.scale;
 	for (let pi in points) {
 		ctx.beginPath();
 		ctx.fillStyle = "#000";
@@ -156,6 +161,15 @@ function draw() {
 		ctx.lineWidth = line[2] == 2 ? 2 * bs : 5 * bs;
 		ctx.moveTo(points[line[0]].x, points[line[0]].y);
 		ctx.lineTo(points[line[1]].x, points[line[1]].y);
+		ctx.stroke();
+		ctx.closePath();
+	}
+	for (let line of svgl) {
+		ctx.closePath();
+		ctx.beginPath();
+		ctx.lineWidth = 1;
+		ctx.moveTo(line[0], line[1]);
+		ctx.lineTo(line[2], line[3]);
 		ctx.stroke();
 		ctx.closePath();
 	}
@@ -178,14 +192,18 @@ function setCameraTransform() {
 	let s = canvas.width / 2 / camera.scale;
 	ctx.setTransform(s, 0, 0, s, (camera.scale - camera.x) * s, (camera.scale - camera.y) * s);
 }
+function updateCamera() {
+	let x = camera.x;
+	let y = camera.y;
+	let s = camera.scale;
+	ws.send([x - s, y - s, x + s, y + s, "getSvgWindow"].join(" "));
+}
 function setCamera(x, y, s) {
 	camera.x = x;
 	camera.y = y;
 	camera.scale = s;
-	setCameraTransform();
-	draw();
+	updateCamera();
 }
-setCamera(0, 0, 1);
 
 let startStroke = [];
 canvas.addEventListener("mousedown", function(e) {
@@ -214,6 +232,8 @@ canvas.addEventListener("mouseup", function(e) {
 			ws.send([l[0], l[1], x, y, "placePoint", "makeTriOrQuad"].join(" "));
 		}
 		console.log(n);
+	} else if (startStroke[1][0] == "point") {
+		ws.send([startStroke[1][1], x, y, "movePoint"].join(" "));
 	}
 }, false);
 canvas.addEventListener("mousemove", function(e) {
@@ -224,6 +244,9 @@ canvas.addEventListener("contextmenu", function(e) {
 	return false;
 }, false);
 
+ws.onopen = function() {
+	setCamera(604, 246, 100);
+}
 
 ws.onmessage = function(e) {
 	let terms = e.data.split(" ");
