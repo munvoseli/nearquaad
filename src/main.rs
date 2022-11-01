@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use hyper::upgrade::Upgraded;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 
 fn parse_point(s: &str) -> (f32, f32) {
 	let ci = s.find(',').unwrap();
@@ -17,8 +18,7 @@ fn parse_point(s: &str) -> (f32, f32) {
 	(x, y)
 }
 
-fn svg_to_segments(fname: &str) -> Vec<((f32, f32), (f32, f32))> {
-	let mut file = std::fs::File::open(fname).unwrap();
+fn svgfile_to_segments(mut file: fs::File) -> Vec<((f32, f32), (f32, f32))> {
 	let mut tokens = Vec::new();
 	file.read_to_end(&mut tokens).unwrap();
 	let tokens = String::from_utf8(tokens).unwrap();
@@ -47,6 +47,10 @@ fn svg_to_segments(fname: &str) -> Vec<((f32, f32), (f32, f32))> {
 	}
 	segments
 }
+fn svg_to_segments(fname: &str) -> Vec<((f32, f32), (f32, f32))> {
+	let mut file = std::fs::File::open(fname).unwrap();
+	svgfile_to_segments(file)
+}
 
 struct Apioform {
 	sink: futures_util::stream::SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>,
@@ -57,6 +61,8 @@ struct Apioform {
 async fn handle(mut req: Request<Body>, apioforms: Arc<Mutex<Vec<Apioform>>>, tx: tokio::sync::mpsc::Sender<(usize, Option<String>)>, api: usize) -> Result<Response<Body>, std::convert::Infallible> {
 	println!("Handling function; path is {}", req.uri());
 	let uri = &req.uri().path()[1..];
+	let uri = if uri.len() < 2 { "index.html" } else { uri };
+	println!("New path: {}", uri);
 	let file = std::fs::File::open(uri);
 	if let Ok(mut file) = file {
 		let mut buf = Vec::new();
@@ -103,6 +109,11 @@ async fn handle(mut req: Request<Body>, apioforms: Arc<Mutex<Vec<Apioform>>>, tx
 		 .header("Sec-WebSocket-Accept", retkey)
 		 .body(Body::empty())
 		 .unwrap())
+	} else if uri == "note-put" {
+		Ok(Response::builder()
+		 .status(200)
+		 .body(Body::from("200 Ook"))
+		 .unwrap())
 	} else {
 		Ok(Response::builder()
 		 .status(404)
@@ -111,17 +122,28 @@ async fn handle(mut req: Request<Body>, apioforms: Arc<Mutex<Vec<Apioform>>>, tx
 	}
 }
 
+struct Note {
+	x: String,
+	y: String,
+	text: String,
+	file_paths: Vec<String>,
+}
+
 struct WorldData {
 	points: HashMap<usize, (String, String)>,
 	pi: usize, // key for hashmap, point id, incremented after each placement
 	// the amount of connections between two points
 	// the idea is that at most two polygons can border a line
 	// the u8 should either be 1 or 2
+	ngons: HashMap<Vec<usize>, u8>,
 	lines: HashMap<[usize; 2], u8>,
 	tris: HashSet<[usize; 3]>,
 	quads: HashSet<[usize; 4]>,
-	vsegments: Vec<((f32, f32), (f32, f32))>
+	vsegments: Vec<((f32, f32), (f32, f32))>,
+	notes: Vec<Note>,
 }
+
+type UniverseData = Vec<WorldData>;
 
 enum FloorTypes {
 	Elevator(String),
@@ -131,15 +153,42 @@ enum FloorTypes {
 	Floor,
 }
 
+fn load_universe() {
+	
+}
+
 impl WorldData {
 	pub fn new() -> WorldData {
 		WorldData {
 			points: HashMap::new(),
+			ngons: HashMap::new(),
 			lines: HashMap::new(),
 			tris: HashSet::new(),
 			quads: HashSet::new(),
 			pi: 0,
-			vsegments: svg_to_segments("al.txt")
+			vsegments: svg_to_segments("al.txt"),
+			notes: Vec::new(),
+		}
+	}
+	pub fn from_directory(dir: &str) -> WorldData {
+		let vsegments = if let Ok(file) = fs::File::open(format!("{}/bg.txt", dir)) {
+			svgfile_to_segments(file)
+		} else {
+			Vec::new()
+		};
+		let points = HashMap::<usize, (String, String)>::new();
+		let lines = HashMap::<[usize; 2], u8>::new();
+		let tris = HashSet::<[usize; 3]>::new();
+		let quads = HashSet::<[usize; 4]>::new();
+		WorldData {
+			points: points,
+			ngons: HashMap::new(),
+			lines: lines,
+			tris: tris,
+			quads: quads,
+			vsegments: vsegments,
+			pi: 0,
+			notes: Vec::new()
 		}
 	}
 	// todo: polynomial symmetry for indexing
@@ -170,21 +219,30 @@ impl WorldData {
 			tokens.push(pii[1].to_string());
 			tokens.push(lc.to_string());
 		}
-		tokens.push("setTris".to_string());
-		tokens.push(self.tris.len().to_string());
-		for tri in &self.tris {
-			tokens.push(tri[0].to_string());
-			tokens.push(tri[1].to_string());
-			tokens.push(tri[2].to_string());
+		tokens.push("setNgons".to_string());
+		tokens.push(self.ngons.len().to_string());
+		for (points, typ) in &self.ngons {
+			tokens.push(typ.to_string());
+			tokens.push(points.len().to_string());
+			for pi in points {
+				tokens.push(pi.to_string());
+			}
 		}
-		tokens.push("setQuads".to_string());
-		tokens.push(self.quads.len().to_string());
-		for quad in &self.quads {
-			tokens.push(quad[0].to_string());
-			tokens.push(quad[1].to_string());
-			tokens.push(quad[2].to_string());
-			tokens.push(quad[3].to_string());
-		}
+//		tokens.push("setTris".to_string());
+//		tokens.push(self.tris.len().to_string());
+//		for tri in &self.tris {
+//			tokens.push(tri[0].to_string());
+//			tokens.push(tri[1].to_string());
+//			tokens.push(tri[2].to_string());
+//		}
+//		tokens.push("setQuads".to_string());
+//		tokens.push(self.quads.len().to_string());
+//		for quad in &self.quads {
+//			tokens.push(quad[0].to_string());
+//			tokens.push(quad[1].to_string());
+//			tokens.push(quad[2].to_string());
+//			tokens.push(quad[3].to_string());
+//		}
 		tokens
 	}
 }
@@ -210,52 +268,101 @@ fn points_to_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib:
 	tokens.push(v[0].to_string());
 	tokens.push(v[1].to_string());
 }
+fn remove_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize) {
+	let mut v = vec![pia, pib]; v.sort();
+	if let Some(l) = wd.lines.get(&[v[0], v[1]]) {
+		if *l == 1 {
+			wd.lines.remove(&[v[0], v[1]]);
+		} else {
+			wd.lines.insert([v[0], v[1]], l - 1);
+		}
+	}
+}
 
-fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pic: usize) {
-	let mut v = vec![pia, pib, pic]; v.sort();
+
+//fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pic: usize) {
+//	let mut v = vec![pia, pib, pic]; v.sort();
+//	points_to_line(wd, tokens, pia, pib);
+//	points_to_line(wd, tokens, pia, pic);
+//	points_to_line(wd, tokens, pib, pic);
+//	wd.tris.insert([v[0], v[1], v[2]]);
+//	tokens.push("makeTri".to_string());
+//	tokens.push(v[0].to_string());
+//	tokens.push(v[1].to_string());
+//	tokens.push(v[2].to_string());
+//}
+//
+//fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) -> bool {
+//	let mut l = None;
+//	let mut t = None;
+//	'lop:
+//	for line in &wd.lines {
+//		if line.0.contains(&pia) && line.0.contains(&pib) {
+//			for tri in &wd.tris {
+//				if tri.contains(&pia) && tri.contains(&pib) {
+//					t = Some(tri.clone());
+//					l = Some(line.0.clone());
+//					break 'lop;
+//				}
+//			}
+//		}
+//	}
+//	if let (Some(tri), Some(line)) = (t, l) {
+//		let mut points = vec![tri[0], tri[1], tri[2], pin];
+//		points.sort();
+//		wd.tris.remove(&tri);
+//		wd.lines.remove(&line);
+//		points_to_line(wd, tokens, pia, pin);
+//		points_to_line(wd, tokens, pib, pin);
+//		wd.quads.insert([points[0], points[1], points[2], points[3]]);
+//		true
+//	} else {
+//		false
+//	}
+//}
+
+//fn make_tri_or_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
+//	if !ppp_to_quad(wd, tokens, pia, pib, pin) {
+//		points_to_tri(wd, tokens, pia, pib, pin);
+//	}
+//}
+
+fn check_ngon_path_has_line(path: &Vec<usize>, pia: usize, pib: usize) -> Option<usize> {
+	if (path[0] == pia && path[path.len() - 1] == pib) ||
+	   (path[0] == pib && path[path.len() - 1] == pia) { return Some(path.len() - 1); }
+	let mut i = 0;
+	for i in 0..path.len() - 1 {
+		let j = i + 1;
+		if (path[i] == pia && path[j] == pib) ||
+		   (path[i] == pib && path[j] == pia) { return Some(i); }
+	}
+	None
+}
+
+fn expand_ppp_ngon(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
+	let mut p = Vec::new();
+	for (path, floor) in &mut wd.ngons {
+		if let Some(i) = check_ngon_path_has_line(&path, pia, pib) {
+			p.push((path.clone(), floor.clone(), i));
+			break;
+		}
+	}
+	for (mut path, floor, i) in p {
+		wd.ngons.remove(&path);
+		path.insert(i + 1, pin);
+		wd.ngons.insert(path, floor);
+		points_to_line(wd, tokens, pia, pin);
+		points_to_line(wd, tokens, pib, pin);
+		remove_line(wd, tokens, pia, pib);
+	}
+}
+fn make_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pic: usize) {
 	points_to_line(wd, tokens, pia, pib);
 	points_to_line(wd, tokens, pia, pic);
 	points_to_line(wd, tokens, pib, pic);
-	wd.tris.insert([v[0], v[1], v[2]]);
-	tokens.push("makeTri".to_string());
-	tokens.push(v[0].to_string());
-	tokens.push(v[1].to_string());
-	tokens.push(v[2].to_string());
-}
-
-fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) -> bool {
-	let mut l = None;
-	let mut t = None;
-	'lop:
-	for line in &wd.lines {
-		if line.0.contains(&pia) && line.0.contains(&pib) {
-			for tri in &wd.tris {
-				if tri.contains(&pia) && tri.contains(&pib) {
-					t = Some(tri.clone());
-					l = Some(line.0.clone());
-					break 'lop;
-				}
-			}
-		}
-	}
-	if let (Some(tri), Some(line)) = (t, l) {
-		let mut points = vec![tri[0], tri[1], tri[2], pin];
-		points.sort();
-		wd.tris.remove(&tri);
-		wd.lines.remove(&line);
-		points_to_line(wd, tokens, pia, pin);
-		points_to_line(wd, tokens, pib, pin);
-		wd.quads.insert([points[0], points[1], points[2], points[3]]);
-		true
-	} else {
-		false
-	}
-}
-
-fn make_tri_or_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
-	if !ppp_to_quad(wd, tokens, pia, pib, pin) {
-		points_to_tri(wd, tokens, pia, pib, pin);
-	}
+	let mut v = vec![pia, pib, pic];
+	v.sort();
+	wd.ngons.insert(v, 0);
 }
 
 enum StackBoi {
@@ -306,19 +413,25 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) -> Vec<String> {
 			let pic = get_point_id(stack.pop().unwrap());
 			let pib = get_point_id(stack.pop().unwrap());
 			let pia = get_point_id(stack.pop().unwrap());
-			points_to_tri(wd, &mut outok, pia, pib, pic);
+			make_tri(wd, &mut outok, pia, pib, pic);
+		},
+		&"expandNgon" => {
+			let pin = get_point_id(stack.pop().unwrap());
+			let pib = get_point_id(stack.pop().unwrap());
+			let pia = get_point_id(stack.pop().unwrap());
+			expand_ppp_ngon(wd, &mut outok, pia, pib, pin);
 		},
 		&"makeQuad" => {
 			let pin = get_point_id(stack.pop().unwrap());
 			let pib = get_point_id(stack.pop().unwrap());
 			let pia = get_point_id(stack.pop().unwrap());
-			ppp_to_quad(wd, &mut outok, pia, pib, pin);
+			expand_ppp_ngon(wd, &mut outok, pia, pib, pin);
 		},
 		&"makeTriOrQuad" => {
 			let pin = get_point_id(stack.pop().unwrap());
 			let pib = get_point_id(stack.pop().unwrap());
 			let pia = get_point_id(stack.pop().unwrap());
-			make_tri_or_quad(wd, &mut outok, pia, pib, pin);
+			expand_ppp_ngon(wd, &mut outok, pia, pib, pin);
 		},
 		&"getSvgWindow" => {
 			let y2 = get_top_float_str(&mut stack).parse::<f32>().unwrap();
@@ -404,9 +517,9 @@ async fn main() {
 					apios.remove(i)
 				};
 				apio.sink.send(tungstenite::Message::Text(msg.to_string())).await.unwrap();
-				println!("{} {}, {}", api, apio.id, api == apio.id);
+				//println!("{} {}, {}", api, apio.id, api == apio.id);
 				if api == apio.id {
-					println!("{}", selfmsg.len());
+					//println!("{}", selfmsg.len());
 					apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
 				}
 				//} else {

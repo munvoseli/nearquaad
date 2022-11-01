@@ -4,8 +4,20 @@
 <script src="script.js" type="text/javascript" defer></script>
 </head>
 <body style="background-color: #777">
-<canvas id="canvas" width="600" height="600" style="background-color: #fff"></canvas>
-<iframe src="https://john.citrons.xyz/embed?ref=munvoseli.github.io" style="margin-left:auto;display:block;margin-right:auto;max-width:732px;width:50%;height:94px;border:none;"></iframe>
+<canvas id="canvas" width="800" height="800" style="background-color: #fff"></canvas>
+<div style="float: right;"
+<p>Mouse action:</p>
+<input type="radio" name="click-action" type="expand" id="ia"><label for="ia">Drag</label><br/>
+<input type="radio" name="click-action" type="put-tri" id="ib"><label for="ib">Put new triangle</label><br/>
+<input type="radio" name="click-action" type="put-image" id="ic"><label for="ic">Put image (not implemented)</label><br/>
+<input type="radio" name="click-action" type="put-text" id="id"><label for="id">Put text (not implemented)</label><br/>
+<button id="zoom">toggle zoom</button>
+<div id="note" style="display:none;">
+<textarea id="note-text"></textarea>
+<button id="note-submit">Submit note</button>
+</div>
+</div>
+<iframe src="https://john.citrons.xyz/embed?ref=munvoseli.github.io" style="position:absolute;left:-9999px;display:block;margin-right:auto;max-width:732px;width:50%;height:94px;border:none;"></iframe>
 &#x1f383;&#x2603;
 </body>
 </html>

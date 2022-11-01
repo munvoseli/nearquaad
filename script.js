@@ -1,5 +1,11 @@
 'use strict';
-console.log("h");
+
+// todo:
+// merge point
+// delete point
+// colors
+// text annotations
+// image annotations
 
 let canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
@@ -12,6 +18,7 @@ let pendingPoints = [];
 let lines = [];
 let tris = [];
 let quads = [];
+let ngons = [];
 let svgl = [];
 
 let camera = {x: 0, y: 0, scale: 1};
@@ -93,57 +100,62 @@ function xyToPoint(x, y) {
 	return mini;
 }
 
-let lastClicked = [];
 let curx, cury;
-
-addEventListener("keydown", function(e) {
-	if (e.key == "t") {
-		if (lastClicked.length < 3) return;
-		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeTri"].join(" "));
-	} else if (e.key == "q") {
-		if (lastClicked.length < 3) return;
-		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeQuad"].join(" "));
-	} else if (e.key == "a") {
-		if (ws.OPEN) {
-			ws.send([curx, cury, "placePoint"].join(" "));
-		}
-	}
-	else if (e.key == "ArrowUp"  ) setCamera(camera.x, camera.y - camera.scale / 3, camera.scale);
-	else if (e.key == "ArrowDown") setCamera(camera.x, camera.y + camera.scale / 3, camera.scale);
-	else if (e.key == "ArrowLeft" ) setCamera(camera.x - camera.scale / 3, camera.y, camera.scale);
-	else if (e.key == "ArrowRight") setCamera(camera.x + camera.scale / 3, camera.y, camera.scale);
-	console.log(e.key);
-}, false);
+let clickMode;
+function asel(elid, val) {
+	document.getElementById(elid).addEventListener("click", function(e) {
+		clickMode = val;
+	}, false);
+}
+asel("ia", "expand");
+asel("ib", "put-tri");
+asel("ic", "put-image");
+asel("id", "put-text");
+function setDragMode() {
+	document.getElementById("ia").checked = true;
+	clickMode = "expand";
+}
+setDragMode();
 
 function draw() {
 	ctx.resetTransform();
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
 	setCameraTransform();
-	// tris
-	for (let tri of tris) {
+	for (let ngon of ngons) {
 		ctx.beginPath();
 		ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-		ctx.moveTo(points[tri[0]].x, points[tri[0]].y);
-		ctx.lineTo(points[tri[1]].x, points[tri[1]].y);
-		ctx.lineTo(points[tri[2]].x, points[tri[2]].y);
+		ctx.moveTo(points[ngon[0]].x, points[ngon[0]].y);
+		for (let i = 1; i < ngon.length; ++i) {
+			ctx.lineTo(points[ngon[i]].x, points[ngon[i]].y);
+		}
 		ctx.fill();
 		ctx.closePath();
 	}
-	// quads
-	for (let quad of quads) {
-		for (let i = 0; i < 4; ++i) {
-			ctx.beginPath();
-			ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
-			let j = i;
-			ctx.moveTo(points[quad[j]].x, points[quad[j]].y);
-			j++; j %= 4;
-			ctx.lineTo(points[quad[j]].x, points[quad[j]].y);
-			j++; j %= 4;
-			ctx.lineTo(points[quad[j]].x, points[quad[j]].y);
-			ctx.fill();
-			ctx.closePath();
-		}
-	}
+	// tris
+//	for (let tri of tris) {
+//		ctx.beginPath();
+//		ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+//		ctx.moveTo(points[tri[0]].x, points[tri[0]].y);
+//		ctx.lineTo(points[tri[1]].x, points[tri[1]].y);
+//		ctx.lineTo(points[tri[2]].x, points[tri[2]].y);
+//		ctx.fill();
+//		ctx.closePath();
+//	}
+//	// quads
+//	for (let quad of quads) {
+//		for (let i = 0; i < 4; ++i) {
+//			ctx.beginPath();
+//			ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+//			let j = i;
+//			ctx.moveTo(points[quad[j]].x, points[quad[j]].y);
+//			j++; j %= 4;
+//			ctx.lineTo(points[quad[j]].x, points[quad[j]].y);
+//			j++; j %= 4;
+//			ctx.lineTo(points[quad[j]].x, points[quad[j]].y);
+//			ctx.fill();
+//			ctx.closePath();
+//		}
+//	}
 	// points
 	let bs = 100 / camera.scale;
 	for (let pi in points) {
@@ -205,35 +217,85 @@ function setCamera(x, y, s) {
 	updateCamera();
 }
 
+let activeNote = [];
 let startStroke = [];
+addEventListener("keydown", function(e) {
+//	if (e.key == "t") {
+//		if (lastClicked.length < 3) return;
+//		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeTri"].join(" "));
+//	} else if (e.key == "q") {
+//		if (lastClicked.length < 3) return;
+//		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeQuad"].join(" "));
+	if (e.key == "a") {
+		if (ws.OPEN) {
+			ws.send([curx, cury, "placePoint"].join(" "));
+		}
+	}
+	else if (e.key == "ArrowUp"  ) setCamera(camera.x, camera.y - camera.scale / 3, camera.scale);
+	else if (e.key == "ArrowDown") setCamera(camera.x, camera.y + camera.scale / 3, camera.scale);
+	else if (e.key == "ArrowLeft" ) setCamera(camera.x - camera.scale / 3, camera.y, camera.scale);
+	else if (e.key == "ArrowRight") setCamera(camera.x + camera.scale / 3, camera.y, camera.scale);
+	console.log(e.key);
+}, false);
+function putTriangle() {
+	let str = "";
+	for (let i = 0; i < 3; ++i) {
+		let ang = i/3 * Math.PI * 2;
+		let x = Math.cos(ang) * 20 + curx;
+		let y = Math.sin(ang) * 20 + cury;
+		str += x + " " + y + " placePoint ";
+	}
+	str += "makeTri";
+	ws.send(str);
+}
+function startNewNote(x, y) {
+	activeNote = [x, y];
+	document.getElementById("note").style.display = "block";
+}
+document.getElementById("note-submit").addEventListener("click", function() {
+	fetch("/put-note", {
+		method: "POST"
+	});
+}, false);
+document.getElementById("zoom").addEventListener("click", function(e) {
+	if (camera.scale == 100) camera.scale = 200;
+	else camera.scale = 100;
+	updateCamera();
+}, false);
 canvas.addEventListener("mousedown", function(e) {
 	let [x, y] = clientToCoord(e);
 	startStroke = [e.button, getNearestThing(x, y)];
-	if (e.button == 0) {
-		draw();
-	} else {
-		console.log(getNearestThing(x, y));
-		console.log(lastClicked);
-		lastClicked.unshift(xyToPoint(x, y));
-		if (lastClicked.length > 3) lastClicked.pop();
+	if (clickMode == "expand") {
+		if (startStroke[1][0] == "none") draw();
+	} else if (clickMode == "put-tri") {
+		putTriangle();
+	} else if (clickMode == "put-image") {
+	} else if (clickMode == "put-text") {
+		startNewNote(x, y);
 	}
-	e.cancelBubble = true;
-	e.preventDefault();
 	return false;
 }, false);
 canvas.addEventListener("mouseup", function(e) {
 	let [x, y] = clientToCoord(e);
-	if (startStroke[1][0] == "line") {
-		let l = lines[startStroke[1][1]];
-		let n = getNearestThing(x, y);
-		if (n[0] == "point") {
-			ws.send([l[0], l[1], n[1], "makeTriOrQuad"].join(" "));
-		} else {
-			ws.send([l[0], l[1], x, y, "placePoint", "makeTriOrQuad"].join(" "));
+	if (clickMode == "expand") {
+		if (startStroke[1][0] == "line") {
+			let l = lines[startStroke[1][1]];
+			let n = getNearestThing(x, y);
+			if (n[0] == "point") {
+				ws.send([l[0], l[1], n[1], "makeTriOrQuad"].join(" "));
+			} else {
+				ws.send([l[0], l[1], x, y, "placePoint", "makeTriOrQuad"].join(" "));
+			}
+			console.log(n);
+		} else if (startStroke[1][0] == "point") {
+			ws.send([startStroke[1][1], x, y, "movePoint"].join(" "));
 		}
-		console.log(n);
-	} else if (startStroke[1][0] == "point") {
-		ws.send([startStroke[1][1], x, y, "movePoint"].join(" "));
+	} else if (clickMode == "put-tri") {
+		setDragMode();
+	} else if (clickMode == "put-image") {
+		setDragMode();
+	} else if (clickMode == "put-text") {
+		setDragMode();
 	}
 }, false);
 canvas.addEventListener("mousemove", function(e) {
@@ -295,6 +357,19 @@ ws.onmessage = function(e) {
 					parseInt(terms[i++]),
 					parseInt(terms[i++]),
 				]);
+			}
+		} break;
+		case "setNgons": {
+			let ct = parseInt(terms[i++]);
+			ngons = [];
+			for (let j = 0; j < ct; ++j) {
+				let tag = parseInt(terms[i++]);
+				let len = parseInt(terms[i++]);
+				let ng = [];
+				for (let k = 0; k < len; ++k) {
+					ng.push(parseInt(terms[i++]));
+				}
+				ngons.push(ng);
 			}
 		} break;
 		case "setSVG": {
