@@ -137,8 +137,6 @@ struct WorldData {
 	// the u8 should either be 1 or 2
 	ngons: HashMap<Vec<usize>, u8>,
 	lines: HashMap<[usize; 2], u8>,
-	tris: HashSet<[usize; 3]>,
-	quads: HashSet<[usize; 4]>,
 	vsegments: Vec<((f32, f32), (f32, f32))>,
 	notes: Vec<Note>,
 }
@@ -163,8 +161,6 @@ impl WorldData {
 			points: HashMap::new(),
 			ngons: HashMap::new(),
 			lines: HashMap::new(),
-			tris: HashSet::new(),
-			quads: HashSet::new(),
 			pi: 0,
 			vsegments: svg_to_segments("al.txt"),
 			notes: Vec::new(),
@@ -178,14 +174,10 @@ impl WorldData {
 		};
 		let points = HashMap::<usize, (String, String)>::new();
 		let lines = HashMap::<[usize; 2], u8>::new();
-		let tris = HashSet::<[usize; 3]>::new();
-		let quads = HashSet::<[usize; 4]>::new();
 		WorldData {
 			points: points,
 			ngons: HashMap::new(),
 			lines: lines,
-			tris: tris,
-			quads: quads,
 			vsegments: vsegments,
 			pi: 0,
 			notes: Vec::new()
@@ -228,21 +220,6 @@ impl WorldData {
 				tokens.push(pi.to_string());
 			}
 		}
-//		tokens.push("setTris".to_string());
-//		tokens.push(self.tris.len().to_string());
-//		for tri in &self.tris {
-//			tokens.push(tri[0].to_string());
-//			tokens.push(tri[1].to_string());
-//			tokens.push(tri[2].to_string());
-//		}
-//		tokens.push("setQuads".to_string());
-//		tokens.push(self.quads.len().to_string());
-//		for quad in &self.quads {
-//			tokens.push(quad[0].to_string());
-//			tokens.push(quad[1].to_string());
-//			tokens.push(quad[2].to_string());
-//			tokens.push(quad[3].to_string());
-//		}
 		tokens
 	}
 }
@@ -278,54 +255,6 @@ fn remove_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: us
 		}
 	}
 }
-
-
-//fn points_to_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pic: usize) {
-//	let mut v = vec![pia, pib, pic]; v.sort();
-//	points_to_line(wd, tokens, pia, pib);
-//	points_to_line(wd, tokens, pia, pic);
-//	points_to_line(wd, tokens, pib, pic);
-//	wd.tris.insert([v[0], v[1], v[2]]);
-//	tokens.push("makeTri".to_string());
-//	tokens.push(v[0].to_string());
-//	tokens.push(v[1].to_string());
-//	tokens.push(v[2].to_string());
-//}
-//
-//fn ppp_to_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) -> bool {
-//	let mut l = None;
-//	let mut t = None;
-//	'lop:
-//	for line in &wd.lines {
-//		if line.0.contains(&pia) && line.0.contains(&pib) {
-//			for tri in &wd.tris {
-//				if tri.contains(&pia) && tri.contains(&pib) {
-//					t = Some(tri.clone());
-//					l = Some(line.0.clone());
-//					break 'lop;
-//				}
-//			}
-//		}
-//	}
-//	if let (Some(tri), Some(line)) = (t, l) {
-//		let mut points = vec![tri[0], tri[1], tri[2], pin];
-//		points.sort();
-//		wd.tris.remove(&tri);
-//		wd.lines.remove(&line);
-//		points_to_line(wd, tokens, pia, pin);
-//		points_to_line(wd, tokens, pib, pin);
-//		wd.quads.insert([points[0], points[1], points[2], points[3]]);
-//		true
-//	} else {
-//		false
-//	}
-//}
-
-//fn make_tri_or_quad(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pin: usize) {
-//	if !ppp_to_quad(wd, tokens, pia, pib, pin) {
-//		points_to_tri(wd, tokens, pia, pib, pin);
-//	}
-//}
 
 fn check_ngon_path_has_line(path: &Vec<usize>, pia: usize, pib: usize) -> Option<usize> {
 	if (path[0] == pia && path[path.len() - 1] == pib) ||
@@ -416,12 +345,6 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) -> Vec<String> {
 			make_tri(wd, &mut outok, pia, pib, pic);
 		},
 		&"expandNgon" => {
-			let pin = get_point_id(stack.pop().unwrap());
-			let pib = get_point_id(stack.pop().unwrap());
-			let pia = get_point_id(stack.pop().unwrap());
-			expand_ppp_ngon(wd, &mut outok, pia, pib, pin);
-		},
-		&"makeQuad" => {
 			let pin = get_point_id(stack.pop().unwrap());
 			let pib = get_point_id(stack.pop().unwrap());
 			let pia = get_point_id(stack.pop().unwrap());

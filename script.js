@@ -220,12 +220,6 @@ function setCamera(x, y, s) {
 let activeNote = [];
 let startStroke = [];
 addEventListener("keydown", function(e) {
-//	if (e.key == "t") {
-//		if (lastClicked.length < 3) return;
-//		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeTri"].join(" "));
-//	} else if (e.key == "q") {
-//		if (lastClicked.length < 3) return;
-//		ws.send([lastClicked[0], lastClicked[1], lastClicked[2], "makeQuad"].join(" "));
 	if (e.key == "a") {
 		if (ws.OPEN) {
 			ws.send([curx, cury, "placePoint"].join(" "));
@@ -282,9 +276,9 @@ canvas.addEventListener("mouseup", function(e) {
 			let l = lines[startStroke[1][1]];
 			let n = getNearestThing(x, y);
 			if (n[0] == "point") {
-				ws.send([l[0], l[1], n[1], "makeTriOrQuad"].join(" "));
+				ws.send([l[0], l[1], n[1], "expandNgon"].join(" "));
 			} else {
-				ws.send([l[0], l[1], x, y, "placePoint", "makeTriOrQuad"].join(" "));
+				ws.send([l[0], l[1], x, y, "placePoint", "expandNgon"].join(" "));
 			}
 			console.log(n);
 		} else if (startStroke[1][0] == "point") {
