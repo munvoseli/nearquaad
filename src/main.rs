@@ -8,7 +8,7 @@ use tokio_tungstenite::WebSocketStream;
 use std::sync::Arc;
 use std::sync::Mutex;
 use hyper::upgrade::Upgraded;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 
 fn parse_point(s: &str) -> (f32, f32) {
@@ -47,10 +47,10 @@ fn svgfile_to_segments(mut file: fs::File) -> Vec<((f32, f32), (f32, f32))> {
 	}
 	segments
 }
-fn svg_to_segments(fname: &str) -> Vec<((f32, f32), (f32, f32))> {
-	let mut file = std::fs::File::open(fname).unwrap();
-	svgfile_to_segments(file)
-}
+//fn svg_to_segments(fname: &str) -> Vec<((f32, f32), (f32, f32))> {
+//	let file = std::fs::File::open(fname).unwrap();
+//	svgfile_to_segments(file)
+//}
 
 struct Apioform {
 	sink: futures_util::stream::SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>,
@@ -67,7 +67,7 @@ async fn handle(mut req: Request<Body>, apioforms: Arc<Mutex<Vec<Apioform>>>, tx
 	if let Ok(mut file) = file {
 		let mut buf = Vec::new();
 		file.read_to_end(&mut buf).unwrap();
-		if uri[uri.len()-2..] == *"js" {
+		if &uri[uri.len()-2..] == "js" {
 			Ok(Response::builder()
 			 .status(200)
 			 .header("Content-Type", "application/javascript")
@@ -129,13 +129,33 @@ struct Note {
 	file_paths: Vec<String>,
 }
 
+#[derive(Clone)]
+enum FloorTypes {
+	Elevator,
+	Stairs,
+	Ramp,
+	Floor,
+	Unknown,
+}
+impl FloorTypes {
+	pub fn to_string(self: &Self) -> String {
+		match self {
+			Self::Elevator => "elevator",
+			Self::Stairs   => "stairs",
+			Self::Ramp     => "ramp",
+			Self::Floor    => "floor",
+			Self::Unknown  => "unknown",
+		}.to_string()
+	}
+}
+
 struct WorldData {
 	points: HashMap<usize, (String, String)>,
 	pi: usize, // key for hashmap, point id, incremented after each placement
 	// the amount of connections between two points
 	// the idea is that at most two polygons can border a line
 	// the u8 should either be 1 or 2
-	ngons: HashMap<Vec<usize>, u8>,
+	ngons: HashMap<Vec<usize>, FloorTypes>,
 	lines: HashMap<[usize; 2], u8>,
 	vsegments: Vec<((f32, f32), (f32, f32))>,
 	notes: Vec<Note>,
@@ -143,29 +163,21 @@ struct WorldData {
 
 type UniverseData = Vec<WorldData>;
 
-enum FloorTypes {
-	Elevator(String),
-	Room(String),
-	Stairs(String),
-	Ramp(String),
-	Floor,
-}
-
 fn load_universe() {
 	
 }
 
 impl WorldData {
-	pub fn new() -> WorldData {
-		WorldData {
-			points: HashMap::new(),
-			ngons: HashMap::new(),
-			lines: HashMap::new(),
-			pi: 0,
-			vsegments: svg_to_segments("al.txt"),
-			notes: Vec::new(),
-		}
-	}
+//	pub fn new() -> WorldData {
+//		WorldData {
+//			points: HashMap::new(),
+//			ngons: HashMap::new(),
+//			lines: HashMap::new(),
+//			pi: 0,
+//			vsegments: svg_to_segments("al.txt"),
+//			notes: Vec::new(),
+//		}
+//	}
 	pub fn from_directory(dir: &str) -> WorldData {
 		let vsegments = if let Ok(file) = fs::File::open(format!("{}/bg.txt", dir)) {
 			svgfile_to_segments(file)
@@ -245,7 +257,7 @@ fn points_to_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib:
 	tokens.push(v[0].to_string());
 	tokens.push(v[1].to_string());
 }
-fn remove_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize) {
+fn remove_line(wd: &mut WorldData, _tokens: &mut Vec<String>, pia: usize, pib: usize) {
 	let mut v = vec![pia, pib]; v.sort();
 	if let Some(l) = wd.lines.get(&[v[0], v[1]]) {
 		if *l == 1 {
@@ -259,7 +271,6 @@ fn remove_line(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: us
 fn check_ngon_path_has_line(path: &Vec<usize>, pia: usize, pib: usize) -> Option<usize> {
 	if (path[0] == pia && path[path.len() - 1] == pib) ||
 	   (path[0] == pib && path[path.len() - 1] == pia) { return Some(path.len() - 1); }
-	let mut i = 0;
 	for i in 0..path.len() - 1 {
 		let j = i + 1;
 		if (path[i] == pia && path[j] == pib) ||
@@ -285,13 +296,13 @@ fn expand_ppp_ngon(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib
 		remove_line(wd, tokens, pia, pib);
 	}
 }
-fn make_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pic: usize) {
+fn make_tri(wd: &mut WorldData, tokens: &mut Vec<String>, pia: usize, pib: usize, pic: usize, ft: FloorTypes) {
 	points_to_line(wd, tokens, pia, pib);
 	points_to_line(wd, tokens, pia, pic);
 	points_to_line(wd, tokens, pib, pic);
 	let mut v = vec![pia, pib, pic];
 	v.sort();
-	wd.ngons.insert(v, 0);
+	wd.ngons.insert(v, ft);
 }
 
 enum StackBoi {
@@ -339,10 +350,22 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) -> Vec<String> {
 			wd.points.insert(pi, (x, y));
 		},
 		&"makeTri" => {
+			let floor_type = if let StackBoi::Raw(s) = stack.pop().unwrap() {
+				match &s[..] {
+					"floor" => FloorTypes::Floor,
+					"elevator" => FloorTypes::Elevator,
+					"ramp" => FloorTypes::Ramp,
+					"stairs" => FloorTypes::Stairs,
+					_ => FloorTypes::Unknown
+				}
+			} else {
+				eprintln!("Wrong StackBoi!!! oh no!!!");
+				FloorTypes::Unknown
+			};
 			let pic = get_point_id(stack.pop().unwrap());
 			let pib = get_point_id(stack.pop().unwrap());
 			let pia = get_point_id(stack.pop().unwrap());
-			make_tri(wd, &mut outok, pia, pib, pic);
+			make_tri(wd, &mut outok, pia, pib, pic, floor_type);
 		},
 		&"expandNgon" => {
 			let pin = get_point_id(stack.pop().unwrap());
@@ -389,29 +412,35 @@ fn run_program(wd: &mut WorldData, tokens: &Vec<&str>) -> Vec<String> {
 #[tokio::main]
 async fn main() {
 	let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
-	let apioforms: Arc<Mutex<Vec<Apioform>>> = Arc::new(Mutex::new(Vec::new()));
-	let apios = apioforms.clone();
+	let mut apios: Vec<Apioform> = Vec::new();
+	let cryoapioforms: Arc<Mutex<Vec<Apioform>>> = Arc::new(Mutex::new(Vec::new()));
+	let cryoapios = cryoapioforms.clone();
 	let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 	let api: usize = 0;
 	let api = Arc::new(Mutex::new(api));
 	let make_service = make_service_fn(move |_conn| {
 		let api = api.clone();
 		let tx = tx.clone();
-		let apioforms = apioforms.clone();
+		let cryoapioforms = cryoapioforms.clone();
 		let service = service_fn(move |req| {
 			let apj = api.clone();
 			let mut apj = apj.lock().unwrap();
 			*apj += 1;
-			handle(req, apioforms.clone(), tx.clone(), *apj)
+			handle(req, cryoapioforms.clone(), tx.clone(), *apj)
 		});
 		async move { Ok::<_, Infallible>(service) }
 	});
 	tokio::spawn(async move {
-		let mut wd = WorldData::new();
+		let mut wd = WorldData::from_directory("maps/alumni1");
 		while let Some((api, message)) = rx.recv().await {
+			{
+				let mut cryoapios = cryoapios.lock().unwrap();
+				while let Some(apio) = cryoapios.pop() {
+					apios.push(apio);
+				}
+			}
 			if message.is_none() {
 				// stream closed
-				let mut apios = apios.lock().unwrap();
 				let mut rem = false;
 				for i in 0..apios.len() {
 					if apios[i].id == api {
@@ -430,29 +459,12 @@ async fn main() {
 			let tokens: Vec<&str> = message.split(' ').collect();
 			let selfmsg = run_program(&mut wd, &tokens).join(" ");
 			let msg = wd.dump().join(" ");
-			let mut i: usize = 0;
-			loop {
-				let mut apio = {
-					let mut apios = apios.lock().unwrap();
-					if i >= apios.len() {
-						break;
-					}
-					apios.remove(i)
-				};
+			for i in 0..apios.len() {
+				let apio = &mut apios[i];
 				apio.sink.send(tungstenite::Message::Text(msg.to_string())).await.unwrap();
-				//println!("{} {}, {}", api, apio.id, api == apio.id);
 				if api == apio.id {
-					//println!("{}", selfmsg.len());
 					apio.sink.send(tungstenite::Message::Text(selfmsg.to_string())).await.unwrap();
 				}
-				//} else {
-				//	apio.sink.send(tungstenite::Message::Text(awaymsg.to_string())).await.unwrap();
-				//}
-				{
-					let mut apios = apios.lock().unwrap();
-					apios.insert(i, apio);
-				}
-				i += 1;
 			}
 		}
 	});

@@ -239,7 +239,7 @@ function putTriangle() {
 		let y = Math.sin(ang) * 20 + cury;
 		str += x + " " + y + " placePoint ";
 	}
-	str += "makeTri";
+	str += "floor makeTri";
 	ws.send(str);
 }
 function startNewNote(x, y) {
